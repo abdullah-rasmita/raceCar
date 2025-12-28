@@ -11,12 +11,17 @@
       --text: #e7eefc;
       --muted: #9bb0d1;
       --accent: #5eead4;
-      --danger: #fb7185;
       --shadow: rgba(0,0,0,.35);
     }
 
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; background: radial-gradient(1200px 800px at 70% 10%, #182033 0%, var(--bg) 55%); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: radial-gradient(1200px 800px at 70% 10%, #182033 0%, var(--bg) 55%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      padding-bottom: 90px; /* space so fixed buttons don't cover the car */
+    }
 
     .wrap {
       min-height: 100%;
@@ -40,7 +45,7 @@
       gap: 12px;
       padding: 12px 14px;
       border-radius: 16px;
-      background: color-mix(in srgb, var(--panel) 88%, transparent);
+      background: rgba(18,24,38,.88);
       box-shadow: 0 10px 30px var(--shadow);
       border: 1px solid rgba(255,255,255,.08);
     }
@@ -71,7 +76,6 @@
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.08);
       font-size: 12px;
-      color: var(--text);
       user-select: none;
     }
     .chip b { font-variant-numeric: tabular-nums; }
@@ -86,7 +90,7 @@
       background: rgba(255,255,255,.08);
       border: 1px solid rgba(255,255,255,.10);
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 700;
       font-size: 12px;
       letter-spacing: .2px;
       transition: transform .08s ease, background .2s ease, border-color .2s ease;
@@ -114,8 +118,9 @@
       display: block;
       width: 100%;
       height: 100%;
-      background: radial-gradient(900px 600px at 50% -20%, rgba(94,234,212,.08) 0%, transparent 55%),
-                  linear-gradient(#0a1020, #070b12);
+      background:
+        radial-gradient(900px 600px at 50% -20%, rgba(94,234,212,.08) 0%, transparent 55%),
+        linear-gradient(#0a1020, #070b12);
     }
 
     .overlay {
@@ -129,7 +134,7 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity .18s ease;
-      z-index: 20; /* above everything */
+      z-index: 20;
     }
     .overlay.show { opacity: 1; pointer-events: auto; }
 
@@ -165,25 +170,23 @@
       margin: 0 2px;
       white-space: nowrap;
     }
-
     .card .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
-    /* ===== Touch controls: robust visibility ===== */
+    /* ===== Touch controls: FIXED to phone screen bottom ===== */
     .touch {
-      position: absolute;
-      left: 0; right: 0; bottom: 10px;
-      display: none;              /* default hidden */
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      display: none;
       justify-content: center;
       gap: 12px;
       padding: 0 12px;
       pointer-events: none;
-      z-index: 10;                /* above canvas */
+      z-index: 9999;
     }
 
-    /* Show if JS says touch is available */
-    html.touch-on .touch { display: flex; }
-
-    /* Also show on small screens (GitHub Pages + mobile safe fallback) */
+    /* show on phones/smaller screens */
     @media (max-width: 900px) {
       .touch { display: flex; }
     }
@@ -195,8 +198,8 @@
       border-radius: 14px;
       padding: 14px 12px;
       font-size: 14px;
-      background: rgba(255,255,255,.10);
-      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.18);
       color: var(--text);
       font-weight: 800;
     }
@@ -215,7 +218,7 @@
     <div class="app">
       <div class="topbar">
         <div class="title">
-          <strong>Mini Car Runnerr</strong>
+          <strong>Mini Car Runner</strong>
           <span>Endless obstacles · Left/Right controls</span>
         </div>
 
@@ -230,11 +233,6 @@
       <div class="stage" id="stage">
         <canvas id="game" width="540" height="960"></canvas>
 
-        <div class="touch">
-          <button id="leftBtn" type="button">◀ Left</button>
-          <button id="rightBtn" type="button">Right ▶</button>
-        </div>
-
         <div class="overlay show" id="overlay">
           <div class="card">
             <h1 id="overlayTitle">Ready?</h1>
@@ -246,7 +244,7 @@
                 <kbd>Space</kbd> pause · <kbd>R</kbd> restart
               </div>
               <div style="margin-top:8px;opacity:.85">
-                On phone: use the on-screen Left/Right buttons.
+                On phone: use the fixed Left/Right buttons at the bottom.
               </div>
             </div>
             <div class="row">
@@ -263,15 +261,14 @@
     </div>
   </div>
 
+  <!-- Fixed touch controls (outside stage so always visible) -->
+  <div class="touch" id="touchControls">
+    <button id="leftBtn" type="button">◀ Left</button>
+    <button id="rightBtn" type="button">Right ▶</button>
+  </div>
+
   <script>
     (() => {
-      // Force-show touch controls reliably (including some WebViews)
-      const isTouch =
-        ("ontouchstart" in window) ||
-        (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
-        (navigator.msMaxTouchPoints && navigator.msMaxTouchPoints > 0);
-      if (isTouch) document.documentElement.classList.add("touch-on");
-
       const canvas = document.getElementById("game");
       const ctx = canvas.getContext("2d");
       const W = canvas.width;
@@ -325,10 +322,10 @@
         const ox = Math.floor(laneCenter(lane) - ow / 2);
         const oy = -oh - 10;
 
+        // avoid too-close same lane spawn
         for (const o of obstacles) {
           if (o.lane === lane && Math.abs(o.y - oy) < oh * 2.2) return;
         }
-
         obstacles.push({ lane, x: ox, y: oy, w: ow, h: oh, kind: kind.name, color: kind.color });
       }
 
@@ -345,10 +342,9 @@
       let crashed = false;
 
       let score = 0;
-      let speed = 520;
       let speedMul = 1.0;
-
       let lastT = 0;
+
       let spawnTimer = 0;
       let spawnEvery = 0.95;
 
@@ -377,7 +373,6 @@
         obstacles.length = 0;
         score = 0;
         speedMul = 1.0;
-        speed = 520;
         spawnTimer = 0;
         spawnEvery = 0.95;
         crashed = false;
@@ -499,16 +494,6 @@
       function render() {
         ctx.clearRect(0, 0, W, H);
 
-        ctx.save();
-        ctx.globalAlpha = 0.35;
-        for (let i = 0; i < 30; i++) {
-          const x = (i * 97) % W;
-          const y = ((i * 173) + (score * 2)) % H;
-          ctx.fillStyle = "rgba(255,255,255,0.10)";
-          ctx.fillRect(x, y, 2, 2);
-        }
-        ctx.restore();
-
         drawRoad();
         for (const o of obstacles) drawObstacle(o);
         drawCar();
@@ -524,7 +509,7 @@
           ctx.fillText("PAUSED", W/2, H/2);
           ctx.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
           ctx.fillStyle = "rgba(231,238,252,0.75)";
-          ctx.fillText("Press Space or tap Resume", W/2, H/2 + 28);
+          ctx.fillText("Tap Resume / press Space", W/2, H/2 + 28);
           ctx.restore();
         }
       }
@@ -533,7 +518,7 @@
         const next = clamp(car.lane + dir, 0, road.lanes - 1);
         if (next !== car.lane) {
           car.lane = next;
-          laneMoveCooldown = 0.12;
+          laneMoveCooldown = laneMoveDelay;
         }
       }
 
@@ -557,8 +542,8 @@
         car.x += (targetX - car.x) * (1 - Math.pow(0.001, dt));
 
         const dashSpeed = speed * 0.65;
-        for (const d of dashes) d.y += dashSpeed * dt;
         const dashH = 44, gap = 32, total = dashH + gap;
+        for (const d of dashes) d.y += dashSpeed * dt;
         for (const d of dashes) if (d.y > H) d.y -= (Math.ceil(H / total) + 2) * total;
 
         spawnTimer += dt;
@@ -583,7 +568,6 @@
 
       function step(t) {
         requestAnimationFrame(step);
-
         if (!running) { render(); lastT = t; return; }
 
         const dt = Math.min(0.033, (t - lastT) / 1000 || 0);
@@ -607,8 +591,7 @@
       function crash() {
         crashed = true;
         paused = false;
-        const finalScore = Math.floor(score);
-        setOverlay(true, "Crashed!", `Final score: ${finalScore}. Tap Start or press R to try again.`);
+        setOverlay(true, "Crashed!", `Final score: ${Math.floor(score)}. Tap Start or press R.`);
       }
 
       function togglePause() {
@@ -647,7 +630,7 @@
         btn.addEventListener("pointerleave",  () => setter(false));
       }
 
-      // Buttons
+      // UI
       pauseBtn.addEventListener("click", () => togglePause());
       restartBtn.addEventListener("click", () => startOrRestart());
       startBtn.addEventListener("click", () => startOrRestart());
@@ -659,7 +642,7 @@
           "• Obstacles fall from the top.\n" +
           "• Left/Right to change lane.\n" +
           "• Score increases and game speeds up.\n\n" +
-          "On phone: use the on-screen buttons."
+          "On phone: use the fixed bottom buttons."
         );
       });
 
@@ -667,7 +650,7 @@
       bindTouch(leftBtn,  (v) => { moveLeftHeld = v; if (v) moveRightHeld = false; });
       bindTouch(rightBtn, (v) => { moveRightHeld = v; if (v) moveLeftHeld = false; });
 
-      // Start by tapping stage (nice for mobile)
+      // Tap stage to start
       document.getElementById("stage").addEventListener("pointerdown", () => {
         if (!running) startOrRestart();
       });
