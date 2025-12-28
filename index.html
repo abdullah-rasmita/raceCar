@@ -12,8 +12,6 @@
       --muted: #9bb0d1;
       --accent: #5eead4;
       --danger: #fb7185;
-      --lane: rgba(255,255,255,.10);
-      --roadEdge: rgba(255,255,255,.18);
       --shadow: rgba(0,0,0,.35);
     }
 
@@ -131,6 +129,7 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity .18s ease;
+      z-index: 20; /* above everything */
     }
     .overlay.show { opacity: 1; pointer-events: auto; }
 
@@ -143,17 +142,9 @@
       padding: 16px;
       text-align: center;
     }
-    .card h1 {
-      margin: 0 0 6px 0;
-      font-size: 18px;
-      letter-spacing: .3px;
-    }
-    .card p {
-      margin: 0 0 12px 0;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.35;
-    }
+    .card h1 { margin: 0 0 6px 0; font-size: 18px; letter-spacing: .3px; }
+    .card p { margin: 0 0 12px 0; color: var(--muted); font-size: 13px; line-height: 1.35; }
+
     .hint {
       font-size: 12px;
       color: rgba(231,238,252,.86);
@@ -175,23 +166,28 @@
       white-space: nowrap;
     }
 
-    .card .row {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
+    .card .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
-    /* Mobile touch controls */
+    /* ===== Touch controls: robust visibility ===== */
     .touch {
       position: absolute;
       left: 0; right: 0; bottom: 10px;
-      display: none;
+      display: none;              /* default hidden */
       justify-content: center;
       gap: 12px;
       padding: 0 12px;
       pointer-events: none;
+      z-index: 10;                /* above canvas */
     }
+
+    /* Show if JS says touch is available */
+    html.touch-on .touch { display: flex; }
+
+    /* Also show on small screens (GitHub Pages + mobile safe fallback) */
+    @media (max-width: 900px) {
+      .touch { display: flex; }
+    }
+
     .touch button {
       pointer-events: auto;
       width: 44%;
@@ -199,16 +195,12 @@
       border-radius: 14px;
       padding: 14px 12px;
       font-size: 14px;
-      background: rgba(255,255,255,.08);
-      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.10);
+      border: 1px solid rgba(255,255,255,.14);
       color: var(--text);
-      font-weight: 700;
+      font-weight: 800;
     }
     .touch button:active { transform: translateY(1px) scale(.99); }
-
-    @media (hover: none) and (pointer: coarse) {
-      .touch { display: flex; }
-    }
 
     .footer {
       text-align: center;
@@ -238,7 +230,7 @@
       <div class="stage" id="stage">
         <canvas id="game" width="540" height="960"></canvas>
 
-        <div class="touch" aria-hidden="true">
+        <div class="touch">
           <button id="leftBtn" type="button">◀ Left</button>
           <button id="rightBtn" type="button">Right ▶</button>
         </div>
@@ -254,7 +246,7 @@
                 <kbd>Space</kbd> pause · <kbd>R</kbd> restart
               </div>
               <div style="margin-top:8px;opacity:.85">
-                Tip: difficulty ramps up automatically.
+                On phone: use the on-screen Left/Right buttons.
               </div>
             </div>
             <div class="row">
@@ -273,15 +265,18 @@
 
   <script>
     (() => {
-      // ---------- Canvas setup ----------
+      // Force-show touch controls reliably (including some WebViews)
+      const isTouch =
+        ("ontouchstart" in window) ||
+        (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
+        (navigator.msMaxTouchPoints && navigator.msMaxTouchPoints > 0);
+      if (isTouch) document.documentElement.classList.add("touch-on");
+
       const canvas = document.getElementById("game");
       const ctx = canvas.getContext("2d");
-
-      // Fit logic: we keep internal resolution fixed, scale via CSS.
       const W = canvas.width;
       const H = canvas.height;
 
-      // ---------- UI ----------
       const scoreEl = document.getElementById("score");
       const speedEl = document.getElementById("speed");
       const pauseBtn = document.getElementById("pauseBtn");
@@ -296,37 +291,21 @@
       const leftBtn = document.getElementById("leftBtn");
       const rightBtn = document.getElementById("rightBtn");
 
-      // ---------- Game constants ----------
-      const road = {
-        x: Math.floor(W * 0.18),
-        y: 0,
-        w: Math.floor(W * 0.64),
-        h: H,
-        lanes: 3
-      };
-
+      const road = { x: Math.floor(W * 0.18), y: 0, w: Math.floor(W * 0.64), h: H, lanes: 3 };
       const laneW = road.w / road.lanes;
 
-      // Player car geometry
       const car = {
         w: Math.floor(laneW * 0.62),
         h: Math.floor(laneW * 1.08),
         x: 0,
         y: Math.floor(H * 0.80),
-        lane: 1, // 0..lanes-1
-        color: "#5eead4"
+        lane: 1,
+        color: "#5eead4",
       };
 
-      function laneCenter(laneIdx) {
-        return road.x + laneW * laneIdx + laneW / 2;
-      }
+      function laneCenter(laneIdx) { return road.x + laneW * laneIdx + laneW / 2; }
+      function resetCar() { car.lane = 1; car.x = Math.floor(laneCenter(car.lane) - car.w / 2); }
 
-      function resetCar() {
-        car.lane = 1;
-        car.x = Math.floor(laneCenter(car.lane) - car.w / 2);
-      }
-
-      // Obstacles
       const obstacles = [];
       const obstacleKinds = [
         { name: "barrel", w: 0.55, h: 0.55, color: "#fbbf24" },
@@ -334,6 +313,9 @@
         { name: "block",  w: 0.65, h: 0.40, color: "#a78bfa" },
         { name: "oil",    w: 0.75, h: 0.35, color: "#94a3b8" },
       ];
+
+      function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+      function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
       function spawnObstacle() {
         const lane = randInt(0, road.lanes - 1);
@@ -343,52 +325,37 @@
         const ox = Math.floor(laneCenter(lane) - ow / 2);
         const oy = -oh - 10;
 
-        // Avoid spawning directly on top of another obstacle in same lane too close
         for (const o of obstacles) {
           if (o.lane === lane && Math.abs(o.y - oy) < oh * 2.2) return;
         }
 
-        obstacles.push({
-          lane, x: ox, y: oy, w: ow, h: oh, kind: kind.name, color: kind.color
-        });
+        obstacles.push({ lane, x: ox, y: oy, w: ow, h: oh, kind: kind.name, color: kind.color });
       }
 
-      // Road dashed lines
       const dashes = [];
       function initDashes() {
         dashes.length = 0;
-        const dashH = 44;
-        const gap = 32;
-        const total = dashH + gap;
+        const dashH = 44, gap = 32, total = dashH + gap;
         const count = Math.ceil(H / total) + 2;
-
-        for (let i = 0; i < count; i++) {
-          dashes.push({ y: i * total });
-        }
+        for (let i = 0; i < count; i++) dashes.push({ y: i * total });
       }
 
-      // ---------- Game state ----------
       let running = false;
       let paused = false;
       let crashed = false;
 
       let score = 0;
-      let speed = 520; // px/s baseline obstacle movement
+      let speed = 520;
       let speedMul = 1.0;
 
       let lastT = 0;
       let spawnTimer = 0;
-      let spawnEvery = 0.95; // seconds (will decrease with difficulty)
+      let spawnEvery = 0.95;
 
-      // Input state (smooth movement lane-to-lane)
       let moveLeftHeld = false;
       let moveRightHeld = false;
-      let laneMoveCooldown = 0; // seconds
+      let laneMoveCooldown = 0;
       const laneMoveDelay = 0.12;
-
-      // ---------- Helpers ----------
-      function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-      function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
 
       function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
         return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
@@ -421,132 +388,6 @@
         setUI();
       }
 
-      // ---------- Rendering ----------
-      function drawRoad() {
-        // Road base
-        roundRect(ctx, road.x, road.y, road.w, road.h, 18);
-        ctx.fillStyle = "rgba(255,255,255,0.04)";
-        ctx.fill();
-
-        // Road edges
-        ctx.strokeStyle = "rgba(255,255,255,0.14)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Lane separators (dashed)
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(road.x, road.y, road.w, road.h);
-        ctx.clip();
-
-        for (let li = 1; li < road.lanes; li++) {
-          const lx = road.x + li * laneW;
-          ctx.fillStyle = "rgba(255,255,255,0.10)";
-          for (const d of dashes) {
-            ctx.fillRect(lx - 2, d.y, 4, 44);
-          }
-        }
-        ctx.restore();
-
-        // Subtle center glow
-        ctx.fillStyle = "rgba(94,234,212,0.03)";
-        ctx.fillRect(road.x + road.w * 0.25, 0, road.w * 0.5, H);
-      }
-
-      function drawCar() {
-        // body
-        const x = car.x, y = car.y, w = car.w, h = car.h;
-        ctx.save();
-
-        // shadow
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        roundRect(ctx, x + 6, y + 10, w, h, 16);
-        ctx.fill();
-
-        // body
-        ctx.fillStyle = car.color;
-        roundRect(ctx, x, y, w, h, 16);
-        ctx.fill();
-
-        // windshield
-        ctx.fillStyle = "rgba(8, 12, 18, 0.55)";
-        roundRect(ctx, x + w*0.18, y + h*0.18, w*0.64, h*0.26, 12);
-        ctx.fill();
-
-        // hood stripe
-        ctx.fillStyle = "rgba(255,255,255,0.18)";
-        roundRect(ctx, x + w*0.45, y + h*0.12, w*0.10, h*0.72, 10);
-        ctx.fill();
-
-        // headlights
-        ctx.fillStyle = "rgba(255,255,255,0.75)";
-        roundRect(ctx, x + w*0.12, y + h*0.06, w*0.18, h*0.08, 8);
-        ctx.fill();
-        roundRect(ctx, x + w*0.70, y + h*0.06, w*0.18, h*0.08, 8);
-        ctx.fill();
-
-        // wheels
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
-        ctx.fillRect(x - 6, y + h*0.20, 8, h*0.22);
-        ctx.fillRect(x - 6, y + h*0.58, 8, h*0.22);
-        ctx.fillRect(x + w - 2, y + h*0.20, 8, h*0.22);
-        ctx.fillRect(x + w - 2, y + h*0.58, 8, h*0.22);
-
-        ctx.restore();
-      }
-
-      function drawObstacle(o) {
-        ctx.save();
-
-        // shadow
-        ctx.fillStyle = "rgba(0,0,0,0.33)";
-        roundRect(ctx, o.x + 5, o.y + 8, o.w, o.h, 12);
-        ctx.fill();
-
-        // body
-        ctx.fillStyle = o.color;
-        roundRect(ctx, o.x, o.y, o.w, o.h, 12);
-        ctx.fill();
-
-        // detail pattern
-        ctx.fillStyle = "rgba(255,255,255,0.16)";
-        if (o.kind === "cone") {
-          roundRect(ctx, o.x + o.w*0.18, o.y + o.h*0.35, o.w*0.64, o.h*0.10, 8);
-          ctx.fill();
-          roundRect(ctx, o.x + o.w*0.22, o.y + o.h*0.55, o.w*0.56, o.h*0.10, 8);
-          ctx.fill();
-        } else if (o.kind === "barrel") {
-          roundRect(ctx, o.x + o.w*0.10, o.y + o.h*0.18, o.w*0.80, o.h*0.10, 8);
-          ctx.fill();
-          roundRect(ctx, o.x + o.w*0.10, o.y + o.h*0.72, o.w*0.80, o.h*0.10, 8);
-          ctx.fill();
-        } else if (o.kind === "oil") {
-          roundRect(ctx, o.x + o.w*0.12, o.y + o.h*0.22, o.w*0.76, o.h*0.56, 999);
-          ctx.fill();
-        } else { // block
-          roundRect(ctx, o.x + o.w*0.14, o.y + o.h*0.20, o.w*0.72, o.h*0.60, 10);
-          ctx.fill();
-        }
-
-        ctx.restore();
-      }
-
-      function drawHUD() {
-        if (!running) return;
-
-        // small in-canvas prompt
-        ctx.save();
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = "rgba(255,255,255,0.12)";
-        roundRect(ctx, 14, 14, 220, 34, 12);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = "rgba(231,238,252,0.9)";
-        ctx.font = "600 13px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-        ctx.fillText("← / → to move · Space to pause", 24, 36);
-        ctx.restore();
-      }
-
       function roundRect(ctx, x, y, w, h, r) {
         const rr = Math.min(r, w/2, h/2);
         ctx.beginPath();
@@ -558,90 +399,106 @@
         ctx.closePath();
       }
 
-      // ---------- Update loop ----------
-      function step(t) {
-        requestAnimationFrame(step);
-        if (!running) {
-          // Still render a nice idle screen
-          render(0);
-          lastT = t;
-          return;
+      function drawRoad() {
+        roundRect(ctx, road.x, road.y, road.w, road.h, 18);
+        ctx.fillStyle = "rgba(255,255,255,0.04)";
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(255,255,255,0.14)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(road.x, road.y, road.w, road.h);
+        ctx.clip();
+
+        for (let li = 1; li < road.lanes; li++) {
+          const lx = road.x + li * laneW;
+          ctx.fillStyle = "rgba(255,255,255,0.10)";
+          for (const d of dashes) ctx.fillRect(lx - 2, d.y, 4, 44);
         }
+        ctx.restore();
 
-        const dt = Math.min(0.033, (t - lastT) / 1000 || 0);
-        lastT = t;
-
-        if (paused || crashed) {
-          render(0);
-          return;
-        }
-
-        update(dt);
-        render(dt);
+        ctx.fillStyle = "rgba(94,234,212,0.03)";
+        ctx.fillRect(road.x + road.w * 0.25, 0, road.w * 0.5, H);
       }
 
-      function update(dt) {
-        // Difficulty ramp: speed multiplier increases slowly with time
-        speedMul += dt * 0.03;                // ~ +0.03 per second
-        speedMul = Math.min(speedMul, 4.0);   // cap
-        speed = 520 * speedMul;
+      function drawCar() {
+        const x = car.x, y = car.y, w = car.w, h = car.h;
+        ctx.save();
 
-        // Spawn frequency increases (lower interval)
-        spawnEvery = clamp(0.95 - (speedMul - 1.0) * 0.15, 0.35, 0.95);
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        roundRect(ctx, x + 6, y + 10, w, h, 16);
+        ctx.fill();
 
-        // Score
-        score += dt * (12 * speedMul);
-        setUI();
+        ctx.fillStyle = car.color;
+        roundRect(ctx, x, y, w, h, 16);
+        ctx.fill();
 
-        // Lane movement with held keys (with small cooldown so it feels snappy)
-        laneMoveCooldown = Math.max(0, laneMoveCooldown - dt);
-        if (laneMoveCooldown <= 0) {
-          if (moveLeftHeld) tryMove(-1);
-          else if (moveRightHeld) tryMove(+1);
-        }
+        ctx.fillStyle = "rgba(8, 12, 18, 0.55)";
+        roundRect(ctx, x + w*0.18, y + h*0.18, w*0.64, h*0.26, 12);
+        ctx.fill();
 
-        // Smooth car x toward lane center
-        const targetX = laneCenter(car.lane) - car.w / 2;
-        car.x += (targetX - car.x) * (1 - Math.pow(0.001, dt)); // exponential smoothing
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        roundRect(ctx, x + w*0.45, y + h*0.12, w*0.10, h*0.72, 10);
+        ctx.fill();
 
-        // Move road dashes
-        const dashSpeed = speed * 0.65;
-        for (const d of dashes) d.y += dashSpeed * dt;
-        const dashH = 44, gap = 32, total = dashH + gap;
-        for (const d of dashes) {
-          if (d.y > H) d.y -= (Math.ceil(H / total) + 2) * total;
-        }
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        roundRect(ctx, x + w*0.12, y + h*0.06, w*0.18, h*0.08, 8); ctx.fill();
+        roundRect(ctx, x + w*0.70, y + h*0.06, w*0.18, h*0.08, 8); ctx.fill();
 
-        // Spawn obstacles
-        spawnTimer += dt;
-        while (spawnTimer >= spawnEvery) {
-          spawnTimer -= spawnEvery;
-          spawnObstacle();
-          // Sometimes add a second obstacle at higher speeds
-          if (speedMul > 2.0 && Math.random() < 0.25) spawnObstacle();
-        }
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(x - 6, y + h*0.20, 8, h*0.22);
+        ctx.fillRect(x - 6, y + h*0.58, 8, h*0.22);
+        ctx.fillRect(x + w - 2, y + h*0.20, 8, h*0.22);
+        ctx.fillRect(x + w - 2, y + h*0.58, 8, h*0.22);
 
-        // Move obstacles + remove offscreen
-        for (let i = obstacles.length - 1; i >= 0; i--) {
-          const o = obstacles[i];
-          o.y += speed * dt;
-          if (o.y > H + 80) obstacles.splice(i, 1);
-        }
-
-        // Collision
-        for (const o of obstacles) {
-          if (aabb(car.x, car.y, car.w, car.h, o.x, o.y, o.w, o.h)) {
-            crash();
-            break;
-          }
-        }
+        ctx.restore();
       }
 
-      function render(dt) {
-        // Clear
+      function drawObstacle(o) {
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.33)";
+        roundRect(ctx, o.x + 5, o.y + 8, o.w, o.h, 12);
+        ctx.fill();
+
+        ctx.fillStyle = o.color;
+        roundRect(ctx, o.x, o.y, o.w, o.h, 12);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(255,255,255,0.16)";
+        if (o.kind === "cone") {
+          roundRect(ctx, o.x + o.w*0.18, o.y + o.h*0.35, o.w*0.64, o.h*0.10, 8); ctx.fill();
+          roundRect(ctx, o.x + o.w*0.22, o.y + o.h*0.55, o.w*0.56, o.h*0.10, 8); ctx.fill();
+        } else if (o.kind === "barrel") {
+          roundRect(ctx, o.x + o.w*0.10, o.y + o.h*0.18, o.w*0.80, o.h*0.10, 8); ctx.fill();
+          roundRect(ctx, o.x + o.w*0.10, o.y + o.h*0.72, o.w*0.80, o.h*0.10, 8); ctx.fill();
+        } else if (o.kind === "oil") {
+          roundRect(ctx, o.x + o.w*0.12, o.y + o.h*0.22, o.w*0.76, o.h*0.56, 999); ctx.fill();
+        } else {
+          roundRect(ctx, o.x + o.w*0.14, o.y + o.h*0.20, o.w*0.72, o.h*0.60, 10); ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawHUD() {
+        if (!running) return;
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        roundRect(ctx, 14, 14, 220, 34, 12);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "rgba(231,238,252,0.9)";
+        ctx.font = "600 13px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+        ctx.fillText("← / → move · Space pause", 24, 36);
+        ctx.restore();
+      }
+
+      function render() {
         ctx.clearRect(0, 0, W, H);
 
-        // Background stars-ish
         ctx.save();
         ctx.globalAlpha = 0.35;
         for (let i = 0; i < 30; i++) {
@@ -652,19 +509,11 @@
         }
         ctx.restore();
 
-        // Road
         drawRoad();
-
-        // Obstacles
         for (const o of obstacles) drawObstacle(o);
-
-        // Player
         drawCar();
-
-        // HUD
         drawHUD();
 
-        // Pause text
         if (paused) {
           ctx.save();
           ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -675,54 +524,77 @@
           ctx.fillText("PAUSED", W/2, H/2);
           ctx.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
           ctx.fillStyle = "rgba(231,238,252,0.75)";
-          ctx.fillText("Press Space or click Resume", W/2, H/2 + 28);
+          ctx.fillText("Press Space or tap Resume", W/2, H/2 + 28);
           ctx.restore();
         }
       }
 
-      // ---------- Controls ----------
       function tryMove(dir) {
         const next = clamp(car.lane + dir, 0, road.lanes - 1);
         if (next !== car.lane) {
           car.lane = next;
-          laneMoveCooldown = laneMoveDelay;
+          laneMoveCooldown = 0.12;
         }
       }
 
-      function onKeyDown(e) {
-        if (e.repeat) return;
-        const k = e.key.toLowerCase();
+      function update(dt) {
+        speedMul += dt * 0.03;
+        speedMul = Math.min(speedMul, 4.0);
+        const speed = 520 * speedMul;
 
-        if (k === "arrowleft" || k === "a") {
-          moveLeftHeld = true;
-          e.preventDefault();
-        } else if (k === "arrowright" || k === "d") {
-          moveRightHeld = true;
-          e.preventDefault();
-        } else if (k === " " || k === "spacebar") {
-          togglePause();
-          e.preventDefault();
-        } else if (k === "r") {
-          startOrRestart();
-          e.preventDefault();
+        spawnEvery = clamp(0.95 - (speedMul - 1.0) * 0.15, 0.35, 0.95);
+
+        score += dt * (12 * speedMul);
+        setUI();
+
+        laneMoveCooldown = Math.max(0, laneMoveCooldown - dt);
+        if (laneMoveCooldown <= 0) {
+          if (moveLeftHeld) tryMove(-1);
+          else if (moveRightHeld) tryMove(+1);
+        }
+
+        const targetX = laneCenter(car.lane) - car.w / 2;
+        car.x += (targetX - car.x) * (1 - Math.pow(0.001, dt));
+
+        const dashSpeed = speed * 0.65;
+        for (const d of dashes) d.y += dashSpeed * dt;
+        const dashH = 44, gap = 32, total = dashH + gap;
+        for (const d of dashes) if (d.y > H) d.y -= (Math.ceil(H / total) + 2) * total;
+
+        spawnTimer += dt;
+        while (spawnTimer >= spawnEvery) {
+          spawnTimer -= spawnEvery;
+          spawnObstacle();
+          if (speedMul > 2.0 && Math.random() < 0.25) spawnObstacle();
+        }
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+          obstacles[i].y += speed * dt;
+          if (obstacles[i].y > H + 80) obstacles.splice(i, 1);
+        }
+
+        for (const o of obstacles) {
+          if (aabb(car.x, car.y, car.w, car.h, o.x, o.y, o.w, o.h)) {
+            crash();
+            break;
+          }
         }
       }
 
-      function onKeyUp(e) {
-        const k = e.key.toLowerCase();
-        if (k === "arrowleft" || k === "a") moveLeftHeld = false;
-        if (k === "arrowright" || k === "d") moveRightHeld = false;
+      function step(t) {
+        requestAnimationFrame(step);
+
+        if (!running) { render(); lastT = t; return; }
+
+        const dt = Math.min(0.033, (t - lastT) / 1000 || 0);
+        lastT = t;
+
+        if (paused || crashed) { render(); return; }
+
+        update(dt);
+        render();
       }
 
-      function bindTouch(btn, setter) {
-        // pointer events so it works on mobile + desktop
-        btn.addEventListener("pointerdown", (e) => { setter(true); btn.setPointerCapture?.(e.pointerId); e.preventDefault(); });
-        btn.addEventListener("pointerup",   (e) => { setter(false); e.preventDefault(); });
-        btn.addEventListener("pointercancel", () => setter(false));
-        btn.addEventListener("pointerleave",  () => setter(false));
-      }
-
-      // ---------- Game flow ----------
       function start() {
         running = true;
         paused = false;
@@ -734,16 +606,13 @@
 
       function crash() {
         crashed = true;
-        running = true; // keep loop rendering
         paused = false;
-
         const finalScore = Math.floor(score);
-        setOverlay(true, "Crashed!", `Final score: ${finalScore}. Press R or Restart to try again.`);
+        setOverlay(true, "Crashed!", `Final score: ${finalScore}. Tap Start or press R to try again.`);
       }
 
       function togglePause() {
-        if (!running) return;
-        if (crashed) return;
+        if (!running || crashed) return;
         paused = !paused;
         setUI();
       }
@@ -753,49 +622,63 @@
         start();
       }
 
-      // ---------- UI events ----------
-      pauseBtn.addEventListener("click", () => {
-        if (!running) return;
-        if (crashed) return;
-        togglePause();
-      });
+      function onKeyDown(e) {
+        if (e.repeat) return;
+        const k = e.key.toLowerCase();
+        if (k === "arrowleft" || k === "a") { moveLeftHeld = true; e.preventDefault(); }
+        else if (k === "arrowright" || k === "d") { moveRightHeld = true; e.preventDefault(); }
+        else if (k === " " || k === "spacebar") { togglePause(); e.preventDefault(); }
+        else if (k === "r") { startOrRestart(); e.preventDefault(); }
+      }
+      function onKeyUp(e) {
+        const k = e.key.toLowerCase();
+        if (k === "arrowleft" || k === "a") moveLeftHeld = false;
+        if (k === "arrowright" || k === "d") moveRightHeld = false;
+      }
 
+      function bindTouch(btn, setter) {
+        btn.addEventListener("touchstart", (e) => { setter(true); e.preventDefault(); }, { passive: false });
+        btn.addEventListener("touchend",   (e) => { setter(false); e.preventDefault(); }, { passive: false });
+        btn.addEventListener("touchcancel",() => setter(false));
+
+        btn.addEventListener("pointerdown", (e) => { setter(true); e.preventDefault(); });
+        btn.addEventListener("pointerup",   (e) => { setter(false); e.preventDefault(); });
+        btn.addEventListener("pointercancel", () => setter(false));
+        btn.addEventListener("pointerleave",  () => setter(false));
+      }
+
+      // Buttons
+      pauseBtn.addEventListener("click", () => togglePause());
       restartBtn.addEventListener("click", () => startOrRestart());
-
       startBtn.addEventListener("click", () => startOrRestart());
 
       howBtn.addEventListener("click", () => {
-        const msg =
+        alert(
           "How it works:\n\n" +
-          "• You have 3 lanes.\n" +
-          "• Obstacles spawn at the top and move down.\n" +
-          "• Use Left/Right (or A/D) to change lanes.\n" +
-          "• Score increases over time, and the game speeds up.\n\n" +
-          "Tip: Keep moving early—difficulty ramps up.";
-        alert(msg);
+          "• 3 lanes.\n" +
+          "• Obstacles fall from the top.\n" +
+          "• Left/Right to change lane.\n" +
+          "• Score increases and game speeds up.\n\n" +
+          "On phone: use the on-screen buttons."
+        );
       });
 
+      // Touch controls
       bindTouch(leftBtn,  (v) => { moveLeftHeld = v; if (v) moveRightHeld = false; });
       bindTouch(rightBtn, (v) => { moveRightHeld = v; if (v) moveLeftHeld = false; });
 
-      window.addEventListener("keydown", onKeyDown, { passive: false });
-      window.addEventListener("keyup", onKeyUp);
-
-      // Tap/click on stage: quick-start if not running
+      // Start by tapping stage (nice for mobile)
       document.getElementById("stage").addEventListener("pointerdown", () => {
         if (!running) startOrRestart();
       });
 
-      // Prevent page scrolling on arrow keys in some browsers
-      window.addEventListener("keydown", (e) => {
-        if (["ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
-      }, { passive: false });
+      window.addEventListener("keydown", onKeyDown, { passive: false });
+      window.addEventListener("keyup", onKeyUp);
 
-      // ---------- Init ----------
+      // Init
       resetGame();
-      setOverlay(true, "Ready?", "Dodge obstacles and survive as long as you can.");
+      setOverlay(true, "Ready?", "Tap Start or tap the game area.");
       requestAnimationFrame(step);
-
     })();
   </script>
 </body>
